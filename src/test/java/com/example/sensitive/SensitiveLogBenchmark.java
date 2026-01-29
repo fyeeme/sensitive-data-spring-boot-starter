@@ -1,13 +1,8 @@
 package com.example.sensitive;
 
 import com.example.sensitive.annotation.Sensitive;
-import com.example.sensitive.config.SensitiveLogProperties.MaskMode;
 import com.example.sensitive.enums.SensitiveType;
 import com.example.sensitive.support.SensitiveEntity;
-import com.example.sensitive.util.SensitiveLogUtils;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -37,15 +32,6 @@ public class SensitiveLogBenchmark {
 
     @Setup
     public void setup() {
-        // 初始化 ObjectMapper
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        mapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
-
-        // 初始化工具类
-        SensitiveLogUtils.init(mapper, MaskMode.BOTH);
-
         // 准备测试数据
         userDTO = new UserDTO();
         userDTO.setId(1L);
@@ -66,42 +52,12 @@ public class SensitiveLogBenchmark {
     }
 
     /**
-     * 基准测试: SensitiveLogUtils.toJson()
-     * 测试通过 Jackson 序列化进行脱敏的性能
-     */
-    @Benchmark
-    public void benchmarkToJson(Blackhole bh) {
-        String result = SensitiveLogUtils.toJson(userDTO);
-        bh.consume(result);
-    }
-
-    /**
      * 基准测试: SensitiveEntity.toString()
      * 测试通过反射进行 toString 脱敏的性能
      */
     @Benchmark
     public void benchmarkToString(Blackhole bh) {
         String result = userEntity.toString();
-        bh.consume(result);
-    }
-
-    /**
-     * 基准测试: SensitiveLogUtils.mask() - Jackson 模式
-     */
-    @Benchmark
-    public void benchmarkMaskJacksonMode(Blackhole bh) {
-        SensitiveLogUtils.setMode(MaskMode.JACKSON);
-        String result = SensitiveLogUtils.mask(userDTO);
-        bh.consume(result);
-    }
-
-    /**
-     * 基准测试: SensitiveLogUtils.mask() - toString 模式
-     */
-    @Benchmark
-    public void benchmarkMaskToStringMode(Blackhole bh) {
-        SensitiveLogUtils.setMode(MaskMode.TO_STRING);
-        String result = SensitiveLogUtils.mask(userDTO);
         bh.consume(result);
     }
 
@@ -137,7 +93,7 @@ public class SensitiveLogBenchmark {
         @Sensitive(type = SensitiveType.NAME)
         private String realName;
 
-        @Sensitive(type = SensitiveType.PASSWORD)
+        // password 字段不脱敏（仅用于测试）
         private String password;
 
         private LocalDateTime createTime;

@@ -5,6 +5,7 @@ import com.example.sensitive.enums.SensitiveType;
 import com.example.sensitive.strategy.MaskStrategyFactory;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -56,28 +57,9 @@ public final class SensitiveToStringBuilder {
      * @return 脱敏后的字符串表示
      */
     public static String build(Object obj) {
-        if (obj == null) {
-            return "null";
-        }
-        
-        Class<?> clazz = obj.getClass();
-        List<FieldMeta> fields = getFieldMetas(clazz);
-        
-        StringJoiner joiner = new StringJoiner(", ", clazz.getSimpleName() + "(", ")");
-        
-        for (FieldMeta meta : fields) {
-            try {
-                Object value = meta.field.get(obj);
-                String strValue = formatValue(value, meta);
-                joiner.add(meta.name + "=" + strValue);
-            } catch (IllegalAccessException e) {
-                joiner.add(meta.name + "=<access denied>");
-            }
-        }
-        
-        return joiner.toString();
+        return buildInternal(obj, null, false);
     }
-    
+
     /**
      * 构建脱敏后的 toString 字符串（包含指定字段）
      *
@@ -86,37 +68,12 @@ public final class SensitiveToStringBuilder {
      * @return 脱敏后的字符串表示
      */
     public static String buildWith(Object obj, String... fieldNames) {
-        if (obj == null) {
-            return "null";
-        }
-        
         if (fieldNames == null || fieldNames.length == 0) {
             return build(obj);
         }
-        
-        Class<?> clazz = obj.getClass();
-        List<FieldMeta> allFields = getFieldMetas(clazz);
-        
-        // 过滤指定字段
-        List<String> targetFields = List.of(fieldNames);
-        
-        StringJoiner joiner = new StringJoiner(", ", clazz.getSimpleName() + "(", ")");
-        
-        for (FieldMeta meta : allFields) {
-            if (targetFields.contains(meta.name)) {
-                try {
-                    Object value = meta.field.get(obj);
-                    String strValue = formatValue(value, meta);
-                    joiner.add(meta.name + "=" + strValue);
-                } catch (IllegalAccessException e) {
-                    joiner.add(meta.name + "=<access denied>");
-                }
-            }
-        }
-        
-        return joiner.toString();
+        return buildInternal(obj, List.of(fieldNames), true);
     }
-    
+
     /**
      * 构建脱敏后的 toString 字符串（排除指定字段）
      *
@@ -125,31 +82,57 @@ public final class SensitiveToStringBuilder {
      * @return 脱敏后的字符串表示
      */
     public static String buildWithout(Object obj, String... fieldNames) {
+        List<String> excludeFields = (fieldNames != null) ? List.of(fieldNames) : List.of();
+        return buildInternal(obj, excludeFields, false);
+    }
+
+    /**
+     * 内部构建方法
+     *
+     * @param obj          对象
+     * @param filterFields 过滤字段列表（include模式为包含，exclude模式为排除）
+     * @param isInclude    是否为包含模式
+     * @return 脱敏后的字符串表示
+     */
+    private static String buildInternal(Object obj, List<String> filterFields, boolean isInclude) {
         if (obj == null) {
             return "null";
         }
-        
+
         Class<?> clazz = obj.getClass();
-        List<FieldMeta> allFields = getFieldMetas(clazz);
-        
-        // 要排除的字段
-        List<String> excludeFields = (fieldNames != null) ? List.of(fieldNames) : List.of();
-        
+        List<FieldMeta> fields = getFieldMetas(clazz);
         StringJoiner joiner = new StringJoiner(", ", clazz.getSimpleName() + "(", ")");
-        
-        for (FieldMeta meta : allFields) {
-            if (!excludeFields.contains(meta.name)) {
-                try {
-                    Object value = meta.field.get(obj);
-                    String strValue = formatValue(value, meta);
-                    joiner.add(meta.name + "=" + strValue);
-                } catch (IllegalAccessException e) {
-                    joiner.add(meta.name + "=<access denied>");
-                }
+
+        for (FieldMeta meta : fields) {
+            if (shouldIncludeField(meta.name, filterFields, isInclude)) {
+                joiner.add(formatField(obj, meta));
             }
         }
-        
+
         return joiner.toString();
+    }
+
+    /**
+     * 判断字段是否应该被包含
+     */
+    private static boolean shouldIncludeField(String fieldName, List<String> filterFields, boolean isInclude) {
+        if (filterFields == null) {
+            return true;
+        }
+        boolean isInFilter = filterFields.contains(fieldName);
+        return isInclude ? isInFilter : !isInFilter;
+    }
+
+    /**
+     * 格式化单个字段
+     */
+    private static String formatField(Object obj, FieldMeta meta) {
+        try {
+            Object value = meta.field.get(obj);
+            return meta.name + "=" + formatValue(value, meta);
+        } catch (IllegalAccessException e) {
+            return meta.name + "=<access denied>";
+        }
     }
     
     /**
@@ -170,39 +153,50 @@ public final class SensitiveToStringBuilder {
      */
     private static List<FieldMeta> parseFields(Class<?> clazz) {
         List<FieldMeta> result = new ArrayList<>();
-        
-        // 遍历类层次结构（包括父类）
         Class<?> currentClass = clazz;
+
         while (currentClass != null && currentClass != Object.class) {
-            Field[] declaredFields = currentClass.getDeclaredFields();
-            
-            for (Field field : declaredFields) {
-                // 跳过静态字段和合成字段
-                if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) ||
-                    field.isSynthetic()) {
-                    continue;
-                }
-                
-                field.setAccessible(true);
-                
-                Sensitive sensitive = field.getAnnotation(Sensitive.class);
-                FieldMeta meta = new FieldMeta(
-                        field,
-                        field.getName(),
-                        sensitive != null,
-                        sensitive != null ? sensitive.type() : null,
-                        sensitive != null ? sensitive.prefixLength() : 0,
-                        sensitive != null ? sensitive.suffixLength() : 0,
-                        sensitive != null ? sensitive.maskChar() : '*'
-                );
-                
-                result.add(meta);
-            }
-            
+            parseDeclaredFields(currentClass, result);
             currentClass = currentClass.getSuperclass();
         }
-        
+
         return result;
+    }
+
+    /**
+     * 解析当前类声明的字段
+     */
+    private static void parseDeclaredFields(Class<?> clazz, List<FieldMeta> result) {
+        for (Field field : clazz.getDeclaredFields()) {
+            if (shouldSkipField(field)) {
+                continue;
+            }
+            field.setAccessible(true);
+            result.add(createFieldMeta(field));
+        }
+    }
+
+    /**
+     * 判断是否应该跳过该字段
+     */
+    private static boolean shouldSkipField(Field field) {
+        return Modifier.isStatic(field.getModifiers()) || field.isSynthetic();
+    }
+
+    /**
+     * 创建字段元数据
+     */
+    private static FieldMeta createFieldMeta(Field field) {
+        Sensitive sensitive = field.getAnnotation(Sensitive.class);
+
+        boolean hasSensitive = sensitive != null;
+        SensitiveType type = hasSensitive ? sensitive.type() : null;
+        int prefixLength = hasSensitive ? sensitive.prefixLength() : 0;
+        int suffixLength = hasSensitive ? sensitive.suffixLength() : 0;
+        char maskChar = hasSensitive ? sensitive.maskChar() : '*';
+
+        return new FieldMeta(field, field.getName(), hasSensitive, type,
+                prefixLength, suffixLength, maskChar);
     }
     
     /**
@@ -212,24 +206,34 @@ public final class SensitiveToStringBuilder {
         if (value == null) {
             return "null";
         }
-        
+
         String strValue = value.toString();
-        
-        // 如果标记了脱敏注解
-        if (meta.hasSensitive && meta.type != null) {
-            if (meta.type == SensitiveType.CUSTOM) {
-                return MaskStrategyFactory.maskCustom(strValue, meta.prefixLength, 
-                        meta.suffixLength, meta.maskChar);
-            } else {
-                return MaskStrategyFactory.mask(strValue, meta.type, meta.maskChar);
-            }
+        String maskedValue = maskValue(strValue, meta);
+        return quoteStringValue(value, maskedValue);
+    }
+
+    /**
+     * 对敏感值进行脱敏处理
+     */
+    private static String maskValue(String strValue, FieldMeta meta) {
+        if (!meta.hasSensitive || meta.type == null) {
+            return strValue;
         }
-        
-        // 字符串类型加引号
+
+        if (meta.type == SensitiveType.CUSTOM) {
+            return MaskStrategyFactory.maskCustom(strValue, meta.prefixLength,
+                    meta.suffixLength, meta.maskChar);
+        }
+        return MaskStrategyFactory.mask(strValue, meta.type, meta.maskChar);
+    }
+
+    /**
+     * 为字符串值添加引号
+     */
+    private static String quoteStringValue(Object value, String strValue) {
         if (value instanceof String) {
             return "\"" + strValue + "\"";
         }
-        
         return strValue;
     }
     

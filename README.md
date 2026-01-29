@@ -9,7 +9,9 @@
 - ✅ **易扩展**：支持自定义脱敏策略
 - ✅ **灵活控制**：支持线程级脱敏开关
 - ✅ **多种方案**：Jackson / toString / 混合模式可配置切换
-- ✅ **API 无影响**：toString 方案不影响接口返回值
+- ✅ **API 脱敏**：支持 API 返回值脱敏 (⭐ 新功能)
+- ✅ **零配置**：使用 `@Sensitive(forApi=true)` 即可启用 API 脱敏
+- ✅ **框架无关**：不依赖 Spring Boot 自动配置，纯 Jackson 实现
 
 ## 快速开始
 
@@ -52,6 +54,39 @@ public UserDTO getUser() {
     return user;  // ✅ JSON 返回完整数据
 }
 ```
+
+#### 🆕 方案五：API 返回值脱敏 (新功能 ⭐)
+
+**需要对 API 返回值也脱敏？只需设置 `forApi=true`！**
+
+```java
+@Data
+public class UserDTO extends SensitiveEntity {
+
+    @Sensitive(type = SensitiveType.PHONE, forApi = true)  // ⭐ 启用 API 脱敏
+    private String phone;
+
+    @Sensitive(type = SensitiveType.ID_CARD)  // 默认 forApi=false
+    private String idCard;
+}
+
+// 日志打印（自动脱敏）
+log.info("用户: {}", user);
+// 输出: UserDTO(phone=138****5678, idCard=110101********1234)
+
+// API 返回（phone 脱敏，idCard 完整）
+@GetMapping("/user")
+public UserDTO getUser() {
+    return user;
+    // JSON: {"phone":"138****5678","idCard":"110101199001011234"}
+}
+```
+
+**API 脱敏特性:**
+- ✅ **零配置**: 无需任何配置类，添加注解即生效
+- ✅ **灵活控制**: 字段级别的细粒度控制
+- ✅ **框架无关**: 纯 Jackson 实现，任何项目都能用
+- ✅ **向后兼容**: 默认 `forApi=false`，不影响现有代码
 
 #### 方案二：实现接口（已有父类时使用）
 
@@ -107,6 +142,50 @@ log.info("用户: {}", SensitiveLogUtils.toJson(user));
 ---
 
 ## 为什么 toString() 不影响 API 返回？
+
+### 传统方案 (forApi = false,默认)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Spring MVC 接口返回                           │
+│  @ResponseBody → Jackson ObjectMapper.writeValueAsString()      │
+│  ✅ 调用 getter 方法获取值                                        │
+│  ❌ 不调用 toString()                                            │
+│  结果：返回完整数据                                               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        日志打印                                   │
+│  log.info("user: {}", user)                                     │
+│  ✅ SLF4J 调用 user.toString()                                   │
+│  结果：返回脱敏数据                                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 🆕 新方案 (forApi = true)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Spring MVC 接口返回                           │
+│  @ResponseBody → Jackson 序列化                                  │
+│  ✅ 发现 @Sensitive(forApi=true)                                 │
+│  ✅ 使用 SensitiveJsonSerializer 脱敏                            │
+│  结果：API 返回也脱敏                                            │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        日志打印                                   │
+│  log.info("user: {}", user)                                     │
+│  ✅ SLF4J 调用 user.toString()                                   │
+│  结果：日志也脱敏                                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**关键区别**:
+- `forApi = false`: 日志脱敏，API 完整 (默认行为)
+- `forApi = true`: 日志和 API 都脱敏 (新功能)
+
+---
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -165,7 +244,6 @@ sensitive:
 | `NAME` | 姓名 | `张*丰` |
 | `ADDRESS` | 地址 | `北京市朝阳区***` |
 | `PASSWORD` | 密码 | `******` |
-| `CAR_NUMBER` | 车牌号 | `京A****8` |
 | `IP_ADDRESS` | IP地址 | `192.168.*.*` |
 | `CUSTOM` | 自定义 | 根据配置 |
 | `DEFAULT` | 默认 | `a*****z` |
