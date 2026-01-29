@@ -81,7 +81,8 @@ public class UserDTO {
 ```java
 import com.example.sensitive.support.SensitiveEntity;
 
-@Data
+@Getter
+@Setter
 public class UserDTO extends SensitiveEntity {
     @Sensitive(type = SensitiveType.PHONE)
     private String phone;
@@ -101,7 +102,8 @@ log.info("用户: {}", user);
 ```java
 import com.example.sensitive.support.SensitiveSupport;
 
-@Data
+@Getter
+@Setter
 public class UserDTO extends BaseEntity implements SensitiveSupport {
     @Sensitive(type = SensitiveType.PHONE)
     private String phone;
@@ -118,55 +120,11 @@ public class UserDTO extends BaseEntity implements SensitiveSupport {
 
 ---
 
-### 方式 3️⃣：Lombok @Exclude + @Include（细粒度控制）
+### 方式 3⃣：结合 Builder 模式
 
 ```java
-@Data
-@ToString
-public class UserDTO {
-    private Long id;
-
-    @ToString.Exclude  // 排除原字段
-    @Sensitive(type = SensitiveType.PHONE)
-    private String phone;
-
-    @ToString.Include(name = "phone")  // 包含脱敏后的值
-    private String maskedPhone() {
-        return MaskStrategyFactory.mask(phone, SensitiveType.PHONE);
-    }
-}
-```
-
-**优点**：可自定义格式
-**缺点**：每个敏感字段都要写方法
-
----
-
-### 方式 4️⃣：禁用 Lombok toString + 手动覆写
-
-```java
-@Data
-@ToString(callSuper = false, onlyExplicitlyIncluded = true)
-public class UserDTO {
-    @Sensitive(type = SensitiveType.PHONE)
-    private String phone;
-
-    @Override
-    public String toString() {
-        return SensitiveToStringBuilder.build(this);
-    }
-}
-```
-
-**优点**：完全控制
-**缺点**：Lombok toString 功能浪费
-
----
-
-### 方式 5️⃣：结合 Builder 模式
-
-```java
-@Data
+@Getter
+@Setter
 @Builder
 public class UserDTO extends SensitiveEntity {
     @Sensitive(type = SensitiveType.PHONE)
@@ -184,10 +142,11 @@ log.info("用户: {}", user);  // 自动脱敏
 
 ---
 
-### 🆕 方式 6️⃣：API 返回值脱敏 (新功能)
+### 🆕 方式 4⃣：API 返回值脱敏 (新功能)
 
 ```java
-@Data
+@Getter
+@Setter
 public class UserDTO extends SensitiveEntity {
 
     @Sensitive(type = SensitiveType.PHONE, forApi = true)  // ⭐ 启用 API 脱敏
@@ -319,7 +278,8 @@ Spring MVC 使用 Jackson 序列化
 ### 示例 1：继承方式
 
 ```java
-@Data
+@Getter
+@Setter
 public class UserDTO extends SensitiveEntity {
     private Long id;
     private String username;
@@ -348,7 +308,8 @@ log.info("用户信息: {}", user);
 ### 示例 2：接口方式
 
 ```java
-@Data
+@Getter
+@Setter
 public class OrderDTO extends BaseEntity implements SensitiveSupport {
     private Long orderId;
 
@@ -402,9 +363,11 @@ try (var scope = SensitiveContext.disable()) {
 }
 ```
 
-### Q4: Lombok 的 `@Data` 会冲突吗？
+### Q4: Lombok 的 `@Getter
+@Setter` 会冲突吗？
 
-**A**: 不会。`@Data` 生成的 `toString()` 会被 `SensitiveEntity` 覆盖（方式1），或者需要手动禁用（方式2、4）。
+**A**: 不会。`@Getter
+@Setter` 生成的 `toString()` 会被 `SensitiveEntity` 覆盖（方式1），或者需要手动禁用（方式2、4）。
 
 ---
 
